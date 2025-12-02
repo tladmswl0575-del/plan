@@ -5,9 +5,9 @@
 <title>랜덤 퀴즈</title>
 <style>
   body { font-family: Arial, sans-serif; padding: 40px; text-align: center; }
-  #quizBox { font-size: 22px; margin-bottom: 20px; white-space: pre-line; }
+  #quizBox { font-size: 22px; margin-bottom: 20px; white-space: pre-wrap; }
   button { padding: 12px 20px; font-size: 18px; margin: 10px; cursor: pointer; }
-  #answerBox { margin-top: 20px; font-size: 20px; color: #444; white-space: pre-line; }
+  #answerBox { margin-top: 20px; font-size: 20px; color: #444; white-space: pre-wrap; }
 </style>
 </head>
 <body>
@@ -21,32 +21,46 @@
 
 <script>
 // ⭐ 네 구글 시트 CSV URL
-const CSV_URL = "https://docs.google.com/spreadsheets/d/16VxOkZhO-TgUWYdQ0BGyGhBR5MKUvyb9Mo6lv4UVx0Q/export?format=csv";
+const CSV_URL =
+  "https://docs.google.com/spreadsheets/d/16VxOkZhO-TgUWYdQ0BGyGhBR5MKUvyb9Mo6lv4UVx0Q/export?format=csv";
 
-// CSV 파싱 (줄바꿈 자동 정리)
-function parseCSV(text) {
-    // 먼저 전체 줄바꿈을 하나의 줄로 합쳐서 레코드 단위로 분리
-    const normalized = text.replace(/\r/g, "");
-    const lines = normalized.split(/\n(?=(?![^"]*"(?:(?:[^"]*"){2})*[^"]*$))/);
+// 고급 CSV 파서 (줄바꿈 포함 레코드 처리)
+function smartParseCSV(text) {
+    text = text.replace(/\r/g, "");
 
-    // 첫 줄은 헤더이므로 제거
-    const header = lines.shift();
+    const rows = [];
+    let current = [];
+    let insideQuotes = false;
+    let value = "";
 
-    return lines
-      .map(line => {
-        // 큰따옴표 제거
-        const clean = line.replace(/^"|"$/g, "").replace(/""/g, '"');
+    for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        const next = text[i + 1];
 
-        // 쉼표 기준(split)으로 3칸 보장
-        const parts = clean.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/);
+        if (c === '"' && next === '"') {
+            value += '"';
+            i++;
+        } else if (c === '"') {
+            insideQuotes = !insideQuotes;
+        } else if (c === ',' && !insideQuotes) {
+            current.push(value);
+            value = "";
+        } else if (c === '\n' && !insideQuotes) {
+            current.push(value);
+            rows.push(current);
+            current = [];
+            value = "";
+        } else {
+            value += c;
+        }
+    }
 
-        return {
-          question: (parts[0] || "").trim(),
-          answer: (parts[1] || "").trim(),
-          note: (parts[2] || "").trim()
-        };
-      })
-      .filter(q => q.question !== "");
+    if (value || current.length) {
+        current.push(value);
+        rows.push(current);
+    }
+
+    return rows;
 }
 
 let quizData = [];
@@ -68,11 +82,21 @@ document.getElementById("nextBtn").onclick = pickRandom;
 fetch(CSV_URL)
   .then(res => res.text())
   .then(text => {
-      quizData = parseCSV(text);
+      const rows = smartParseCSV(text);
+      rows.shift(); // Header 제거
+
+      quizData = rows
+        .filter(r => r[0] && r[0].trim() !== "")
+        .map(r => ({
+            question: r[0],
+            answer: r[1] || "",
+            note: r[2] || ""
+        }));
+
       pickRandom();
   })
   .catch(err => {
-      document.getElementById("quizBox").textContent = "CSV 로딩 실패 :(";
+      document.getElementById("quizBox").textContent = "CSV 로딩 실패!";
       console.error(err);
   });
 
