@@ -2,119 +2,76 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<title>구글 시트 연동 퀴즈</title>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-
+<title>랜덤 퀴즈</title>
 <style>
-    body { 
-        font-family: sans-serif; 
-        max-width: 600px; 
-        margin: 50px auto; 
-        font-size: 18px;
-    }
-    .card { 
-        border: 1px solid #ddd; 
-        padding: 25px; 
-        border-radius: 12px;
-        background: #fafafa;
-    }
-    button { 
-        margin-top: 20px; 
-        padding: 12px; 
-        width: 100%; 
-        font-size: 17px; 
-        cursor: pointer; 
-        border-radius: 8px; 
-        border: none;
-        background: #4CAF50;
-        color: white;
-    }
-    #answerArea { 
-        margin-top: 15px;
-        display: none; 
-    }
+  body { font-family: Arial, sans-serif; padding: 40px; text-align: center; }
+  #quizBox { font-size: 22px; margin-bottom: 20px; white-space: pre-line; }
+  button {
+    padding: 12px 20px; font-size: 18px;
+    margin: 10px; cursor: pointer;
+  }
+  #answerBox { margin-top: 20px; font-size: 20px; color: #444; white-space: pre-line; }
 </style>
 </head>
 <body>
 
-<h2>구글 시트 연동 퀴즈</h2>
+<h1>랜덤 퀴즈</h1>
+<div id="quizBox">문제를 불러오는 중...</div>
+<button id="showAnswerBtn">정답 보기</button>
+<button id="nextBtn">다음 문제</button>
 
-<div id="quiz" style="display:none;">
-    <div class="card">
-        <div id="question"></div>
-        <div id="answerArea"></div>
-    </div>
-
-    <button id="showAnswerBtn">정답 보기</button>
-    <button id="nextBtn" style="display:none;">다음 문제</button>
-</div>
+<div id="answerBox"></div>
 
 <script>
-let quizData = [];
-let idx = 0;
-
-// 🔥 구글 시트 CSV 자동 URL
+// ⭐ 네 구글 시트 CSV 다운로드 링크
 const CSV_URL = "https://docs.google.com/spreadsheets/d/16VxOkZhO-TgUWYdQ0BGyGhBR5MKUvyb9Mo6lv4UVx0Q/export?format=csv";
 
-function clean(text) {
-    if (!text) return "";
-    return text.replace(/\r?\n|\r/g, " ").trim();
+// CSV → 배열 변환
+function parseCSV(text) {
+    const rows = text.split("\n").map(r => r.split(","));
+    const header = rows.shift();  // 첫 줄: 문제, 답, 비고
+    return rows
+      .filter(r => r[0].trim() !== "") // 빈 줄 제거
+      .map(r => ({
+        question: r[0],
+        answer: r[1] || "",
+        note: r[2] || ""
+      }));
 }
+
+let quizData = [];
+let current = null;
+
+// 랜덤 문제 선택
+function pickRandom() {
+    if (!quizData.length) return;
+    current = quizData[Math.floor(Math.random() * quizData.length)];
+    document.getElementById("quizBox").textContent = current.question;
+    document.getElementById("answerBox").textContent = "";
+}
+
+// 정답 표시
+document.getElementById("showAnswerBtn").onclick = () => {
+    if (!current) return;
+    document.getElementById("answerBox").textContent = 
+        `정답: ${current.answer}\n\n비고: ${current.note}`;
+};
+
+// 다음 문제
+document.getElementById("nextBtn").onclick = pickRandom;
 
 // CSV 불러오기
 fetch(CSV_URL)
-    .then(res => res.text())
-    .then(csvText => {
-        Papa.parse(csvText, {
-            header: true,
-            skipEmptyLines: true,
-            complete: function(results) {
-                quizData = results.data.map(row => ({
-                    question: clean(row["문제"]),
-                    answer: clean(row["답"]),
-                    note: clean(row["비고"])
-                }));
-                startQuiz();
-            }
-        });
-    })
-    .catch(err => alert("CSV 로딩 오류: " + err));
+  .then(res => res.text())
+  .then(text => {
+      quizData = parseCSV(text);
+      pickRandom();
+  })
+  .catch(err => {
+      document.getElementById("quizBox").textContent = "CSV 로딩 실패 :(";
+      console.error(err);
+  });
 
-function startQuiz() {
-    if (quizData.length === 0) {
-        alert("CSV 데이터 없음. '문제, 답, 비고' 헤더 확인 필요");
-        return;
-    }
-    document.getElementById('quiz').style.display = 'block';
-    showQuestion();
-}
-
-function showQuestion() {
-    const item = quizData[idx];
-
-    document.getElementById("question").innerText = "Q. " + item.question;
-
-    let html = "<b>A. " + item.answer + "</b>";
-    if (item.note) html += "<br><small>비고: " + item.note + "</small>";
-
-    document.getElementById("answerArea").innerHTML = html;
-    document.getElementById("answerArea").style.display = "none";
-
-    document.getElementById("showAnswerBtn").style.display = "block";
-    document.getElementById("nextBtn").style.display = "none";
-}
-
-document.getElementById("showAnswerBtn").onclick = () => {
-    document.getElementById("answerArea").style.display = "block";
-    document.getElementById("showAnswerBtn").style.display = "none";
-    document.getElementById("nextBtn").style.display = "block";
-};
-
-document.getElementById("nextBtn").onclick = () => {
-    idx = (idx + 1) % quizData.length;
-    showQuestion();
-};
 </script>
 
 </body>
