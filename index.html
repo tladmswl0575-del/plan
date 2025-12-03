@@ -3,28 +3,105 @@
 <head>
 <meta charset="UTF-8">
 <title>랜덤 퀴즈</title>
+
 <style>
-  body { font-family: Arial, sans-serif; padding: 40px; text-align: center; }
-  #quizBox { font-size: 22px; margin-bottom: 20px; white-space: pre-wrap; }
-  button { padding: 12px 20px; font-size: 18px; margin: 10px; cursor: pointer; }
-  #answerBox { margin-top: 20px; font-size: 20px; color: #444; white-space: pre-wrap; }
+  body { 
+    font-family: Arial, sans-serif; 
+    text-align: center;
+
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+
+    height: 100vh;
+    margin: 0;
+  }
+
+  #quizBox { 
+    font-size: 22px; 
+    margin-bottom: 20px; 
+    white-space: pre-wrap; 
+    max-width: 600px;
+  }
+
+  button { 
+    padding: 12px 20px; 
+    font-size: 18px; 
+    margin: 10px; 
+    cursor: pointer; 
+  }
+
+  #answerBox { 
+    margin-top: 20px; 
+    font-size: 20px; 
+    color: #444; 
+    white-space: pre-wrap; 
+    max-width: 600px;
+  }
+
+  /* 모달 스타일 */
+  #modalOverlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0,0,0,0.45);
+    justify-content: center;
+    align-items: center;
+  }
+
+  #modalBox {
+    background: white;
+    width: 80%;
+    max-width: 700px;
+    max-height: 80vh;
+    overflow-y: auto;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 0 20px rgba(0,0,0,0.4);
+    text-align: left;
+  }
+
+  #modalBox h2 {
+    text-align: center;
+  }
+
 </style>
+
 </head>
 <body>
 
 <h1>랜덤 퀴즈</h1>
 <div id="quizBox">문제를 불러오는 중...</div>
-<button id="showAnswerBtn">정답 보기</button>
-<button id="nextBtn">다음 문제</button>
+
+<!-- 메인 버튼 -->
+<button id="mainBtn">정답 보기</button>
+
+<!-- 오답노트 보기 -->
+<button id="wrongNoteBtn">오답노트 보기</button>
 
 <div id="answerBox"></div>
 
+<!-- 오답노트 모달 -->
+<div id="modalOverlay">
+  <div id="modalBox">
+    <h2>오답노트 (최근 7일)</h2>
+    <div id="wrongList"></div>
+    <div style="text-align:center;">
+      <button onclick="closeModal()">닫기</button>
+    </div>
+  </div>
+</div>
+
 <script>
-// ⭐ 네 구글 시트 CSV URL
+// ⭐ 구글 시트 CSV
 const CSV_URL =
   "https://docs.google.com/spreadsheets/d/16VxOkZhO-TgUWYdQ0BGyGhBR5MKUvyb9Mo6lv4UVx0Q/export?format=csv";
 
-// 고급 CSV 파서 (줄바꿈 포함 레코드 처리)
+/* ---------------------------
+     CSV 파서 (줄바꿈 지원)
+----------------------------*/
 function smartParseCSV(text) {
     text = text.replace(/\r/g, "");
 
@@ -63,27 +140,137 @@ function smartParseCSV(text) {
     return rows;
 }
 
+/* ---------------------------
+     전역 변수
+----------------------------*/
 let quizData = [];
 let current = null;
+let showingAnswer = false;
 
-function pickRandom() {
-    current = quizData[Math.floor(Math.random() * quizData.length)];
-    document.getElementById("quizBox").textContent = current.question;
-    document.getElementById("answerBox").textContent = "";
+/* ---------------------------
+     날짜 포맷 (YYYY-MM-DD)
+----------------------------*/
+function todayKey() {
+    return new Date().toISOString().slice(0, 10);
 }
 
-document.getElementById("showAnswerBtn").onclick = () => {
-    document.getElementById("answerBox").textContent =
-        `정답: ${current.answer}\n\n비고: ${current.note}`;
+/* ---------------------------
+     오답노트 저장/관리
+----------------------------*/
+function loadWrongNotes() {
+    return JSON.parse(localStorage.getItem("wrongNotes") || "{}");
+}
+
+function saveWrongNotes(obj) {
+    localStorage.setItem("wrongNotes", JSON.stringify(obj));
+}
+
+function cleanupOldNotes() {
+    let notes = loadWrongNotes();
+    const keys = Object.keys(notes);
+
+    const now = new Date();
+    const limitDays = 7;
+
+    for (let day of keys) {
+        const diff = (now - new Date(day)) / (1000 * 60 * 60 * 24);
+        if (diff > limitDays) {
+            delete notes[day];
+        }
+    }
+    saveWrongNotes(notes);
+}
+
+function addWrongNote(q, a, noteText) {
+    let notes = loadWrongNotes();
+    const key = todayKey();
+
+    if (!notes[key]) notes[key] = [];
+
+    notes[key].push({
+        question: q,
+        answer: a,
+        note: noteText,
+        time: Date.now()
+    });
+
+    saveWrongNotes(notes);
+    cleanupOldNotes();
+}
+
+/* ---------------------------
+     문제 뽑기
+----------------------------*/
+function pickRandom() {
+    showingAnswer = false;
+    current = quizData[Math.floor(Math.random() * quizData.length)];
+
+    quizBox.textContent = current.question;
+    answerBox.textContent = "";
+    mainBtn.textContent = "정답 보기";
+}
+
+/* ---------------------------
+     메인 버튼 클릭
+----------------------------*/
+mainBtn.onclick = () => {
+    if (!showingAnswer) {
+        // 정답 보기
+        showingAnswer = true;
+        answerBox.textContent = `정답: ${current.answer}\n\n비고: ${current.note}`;
+        mainBtn.textContent = "다음 문제";
+
+        // 정답 확인했을 때 틀린 문제 저장 → 여기서는 "정답을 못 맞췄다고 가정"
+        addWrongNote(current.question, current.answer, current.note);
+
+    } else {
+        // 다음 문제
+        pickRandom();
+    }
 };
 
-document.getElementById("nextBtn").onclick = pickRandom;
+/* ---------------------------
+     오답노트 모달
+----------------------------*/
+wrongNoteBtn.onclick = () => {
+    const notes = loadWrongNotes();
+    let html = "";
 
+    const days = Object.keys(notes).sort().reverse(); // 최근 날짜 우선
+
+    if (days.length === 0) {
+        html = "<p>최근 7일 오답이 없습니다.</p>";
+    } else {
+        for (let day of days) {
+            html += `<h3>${day}</h3>`;
+            notes[day].forEach((item, i) => {
+                html += `
+                  <div style="border-bottom:1px solid #ccc; padding:10px 0;">
+                    <strong>문제 ${i+1}</strong><br>
+                    ${item.question}<br><br>
+                    <strong>정답:</strong> ${item.answer}<br>
+                    <strong>비고:</strong> ${item.note}
+                  </div>`;
+            });
+        }
+    }
+
+    document.getElementById("wrongList").innerHTML = html;
+    document.getElementById("modalOverlay").style.display = "flex";
+};
+
+function closeModal() {
+    document.getElementById("modalOverlay").style.display = "none";
+}
+
+/* ---------------------------
+     CSV 로딩
+----------------------------*/
 fetch(CSV_URL)
   .then(res => res.text())
   .then(text => {
       const rows = smartParseCSV(text);
-      rows.shift(); // Header 제거
+      rows.shift(); // header 제거
 
       quizData = rows
         .filter(r => r[0] && r[0].trim() !== "")
@@ -93,10 +280,11 @@ fetch(CSV_URL)
             note: r[2] || ""
         }));
 
+      cleanupOldNotes();
       pickRandom();
   })
   .catch(err => {
-      document.getElementById("quizBox").textContent = "CSV 로딩 실패!";
+      quizBox.textContent = "CSV 로딩 실패!";
       console.error(err);
   });
 
